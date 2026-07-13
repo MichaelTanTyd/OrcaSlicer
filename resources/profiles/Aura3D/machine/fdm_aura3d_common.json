@@ -1,0 +1,73 @@
+{
+	"type": "machine",
+	"name": "fdm_aura3d_common",
+	"inherits": "fdm_machine_common",
+	"from": "system",
+	"setting_id": "Aura3D_01",
+	"instantiation": "false",
+	"printer_variant": "0.4",
+	"gcode_flavor": "klipper",
+	"machine_max_acceleration_x": [
+		"20000"
+	],
+	"machine_max_acceleration_y": [
+		"20000"
+	],
+	"machine_max_acceleration_z": [
+		"2000"
+	],
+	"machine_max_speed_x": [
+		"2000"
+	],
+	"machine_max_speed_y": [
+		"2000"
+	],
+	"machine_max_speed_z": [
+		"500"
+	],
+	"machine_max_acceleration_extruding": [
+		"20000"
+	],
+	"machine_max_acceleration_retracting": [
+		"5000"
+	],
+	"retract_when_changing_layer": [
+		"1"
+	],
+	"retraction_length": [
+		"0"
+	],
+	"retract_length_toolchange": [
+		"0"
+	],
+	"z_hop": [
+		"0"
+	],
+	"retract_restart_extra": [
+		"0"
+	],
+	"retract_restart_extra_toolchange": [
+		"0"
+	],
+	"use_firmware_retraction": "1",
+	"printable_height": "500",
+	"nozzle_diameter": [
+		"0.4"
+	],
+	"max_layer_height": [
+		"0.32"
+	],
+	"min_layer_height": [
+		"0.08"
+	],
+	"machine_start_gcode": "",
+	"machine_end_gcode": "",
+	"layer_change_gcode": "",
+	"before_layer_change_gcode": "",
+	"machine_pause_gcode": "",
+	"change_filament_gcode": "",
+	"template_custom_gcode": "",
+	"extruder_clearance_radius": "120",
+	"extruder_clearance_height_to_rod": "60",
+	"extruder_clearance_height_to_lid": "500"
+}

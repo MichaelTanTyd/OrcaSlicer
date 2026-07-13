@@ -1,0 +1,12 @@
+{
+	"type": "machine_model",
+	"name": "Robot3D",
+	"model_id": "aura3d_robot3d_1",
+	"nozzle_diameter": "0.4;0.6;0.8",
+	"machine_tech": "FFF",
+	"family": "Robot3D",
+	"bed_model": "",
+	"bed_texture": "",
+	"hotend_model": "",
+	"default_materials": "Generic PLA @System;Generic PETG @System;Generic TPU @System;Generic ABS @System;Generic PA @System;Generic PA-CF @System;Generic PC @System"
+}
