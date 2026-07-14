@@ -37,6 +37,34 @@ const CONFIG = {
 };
 
 // ============================================================
+//  Comment filter — suppress noisy OrcaSlicer comments
+// ============================================================
+
+const SUPPRESS_PATTERNS = [
+    /^Skipped:\s*SET_VELOCITY_LIMIT/i,
+    /^Skipped:\s*M140/i,
+    /^SET_VELOCITY_LIMIT/i,
+    /^_SET_FAN_SPEED_CHANGING_LAYER/i,
+    /^WIDTH:/i,
+    /^HEIGHT:/i,
+];
+
+const SUBCOMMENT_WORDS = new Set([
+    'skirt', 'perimeter', 'infill', 'wipe and retract',
+]);
+
+function filterComment(comment) {
+    if (!comment) return null;
+    const c = comment.trim();
+    if (!c) return null;
+    for (const re of SUPPRESS_PATTERNS) {
+        if (re.test(c)) return null;
+    }
+    if (SUBCOMMENT_WORDS.has(c.toLowerCase())) return null;
+    return c;
+}
+
+// ============================================================
 //  G-code State
 // ============================================================
 
@@ -117,6 +145,7 @@ class KRLGenerator {
         this.state = new GCodeState();
         this.prevZ = 0;
         this.layerCount = 0;
+        this.lastComment = '';
     }
 
     transformXYZ(x, y, z) {
@@ -135,7 +164,11 @@ class KRLGenerator {
     }
 
     comment(text, indent = 1) {
-        this.emit(`; ${text}`, indent);
+        const filtered = filterComment(text);
+        if (!filtered) return;
+        if (filtered === this.lastComment) return;
+        this.lastComment = filtered;
+        this.emit(`; ${filtered}`, indent);
     }
 
     updatePosition(params) {
@@ -262,8 +295,12 @@ class KRLGenerator {
         let feedrate = params.F || this.state.f || 3600;
         const vel = this.fToVel(feedrate);
 
-        if (comment && comment.trim() && !comment.startsWith('LAYER:')) {
-            this.comment(comment.trim());
+        // Emit comment only for meaningful type markers (TYPE:, WIPE_START, WIPE_END, LAYER_CHANGE etc)
+        if (comment) {
+            const c = comment.trim();
+            if (c && !c.startsWith('LAYER:') && !c.startsWith('move to')) {
+                this.comment(c);
+            }
         }
 
         // Layer change: Z lift only
@@ -300,6 +337,9 @@ class KRLGenerator {
     }
 
     skipCmd(msg) {
+        // Suppress noisy skip messages for common KRL-incompatible commands
+        if (/SET_VELOCITY_LIMIT/i.test(msg)) return;
+        if (/M140|M190/i.test(msg)) return;
         this.comment(`Skipped: ${msg}`);
     }
 }
@@ -375,9 +415,20 @@ function convertGcodeToKRL(gcodePath) {
             gen.comment(comment);
             continue;
         }
+        // Capture Z from comment following layer change
+        if (pendingLayerChange && comment) {
+            const zMatch = comment.trim().match(/^Z:\s*([\d.]+)/);
+            if (zMatch) gen.state.z = parseFloat(zMatch[1]);
+        }
 
         if (!cmd) {
-            if (comment && !isLayerChange(comment)) gen.comment(comment);
+            if (comment) {
+                const c = comment.trim();
+                // Keep only meaningful standalone comments
+                if (/^(TYPE:|WIPE_START|WIPE_END|LAYER_CHANGE|Z:|printing object|stop printing)/i.test(c)) {
+                    gen.comment(c);
+                }
+            }
             continue;
         }
 

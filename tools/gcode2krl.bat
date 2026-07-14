@@ -1,7 +1,7 @@
 @echo off
 REM gcode2krl.bat — G-code to KRL converter wrapper for OrcaSlicer post-processor
 REM Called by OrcaSlicer with the G-code file path as the first argument
-REM Uses Node.js to run the converter
+REM Standalone .exe — no Node.js installation required
 
-node "%~dp0gcode2krl.js" %*
+"%~dp0gcode2krl.exe" %*
 exit /b %ERRORLEVEL%
