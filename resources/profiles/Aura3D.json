@@ -1,8 +1,8 @@
 {
 	"name": "Aura3D",
-	"version": "01.00.00.00",
-	"force_update": "0",
-	"description": "Aura3D Robotic 3D Printing — KUKA Robot Arm Profiles",
+	"version": "02.00.00.00",
+	"force_update": "1",
+	"description": "Aura3D Robotic 3D Printing — KUKA KR210 R2700 + E26 Pellet Extruder (3/6/9/12mm nozzles)",
 	"machine_model_list": [
 		{
 			"name": "Robot3D",
@@ -19,28 +19,36 @@
 			"sub_path": "process/fdm_process_aura3d_common.json"
 		},
 		{
-			"name": "0.12mm Fine @Robot3D",
-			"sub_path": "process/0.12mm Fine @Robot3D.json"
+			"name": "1.0mm Fine @Robot3D 3mm",
+			"sub_path": "process/1.0mm Fine @Robot3D 3mm.json"
 		},
 		{
-			"name": "0.16mm Optimal @Robot3D",
-			"sub_path": "process/0.16mm Optimal @Robot3D.json"
+			"name": "2.0mm Standard @Robot3D 3mm",
+			"sub_path": "process/2.0mm Standard @Robot3D 3mm.json"
 		},
 		{
-			"name": "0.20mm Standard @Robot3D",
-			"sub_path": "process/0.20mm Standard @Robot3D.json"
+			"name": "2.0mm Fine @Robot3D 6mm",
+			"sub_path": "process/2.0mm Fine @Robot3D 6mm.json"
 		},
 		{
-			"name": "0.24mm Draft @Robot3D",
-			"sub_path": "process/0.24mm Draft @Robot3D.json"
+			"name": "3.0mm Standard @Robot3D 6mm",
+			"sub_path": "process/3.0mm Standard @Robot3D 6mm.json"
 		},
 		{
-			"name": "0.28mm Extra Draft @Robot3D",
-			"sub_path": "process/0.28mm Extra Draft @Robot3D.json"
+			"name": "3.0mm Standard @Robot3D 9mm",
+			"sub_path": "process/3.0mm Standard @Robot3D 9mm.json"
 		},
 		{
-			"name": "0.32mm Super Draft @Robot3D",
-			"sub_path": "process/0.32mm Super Draft @Robot3D.json"
+			"name": "5.0mm Draft @Robot3D 9mm",
+			"sub_path": "process/5.0mm Draft @Robot3D 9mm.json"
+		},
+		{
+			"name": "3.0mm Standard @Robot3D 12mm",
+			"sub_path": "process/3.0mm Standard @Robot3D 12mm.json"
+		},
+		{
+			"name": "5.0mm Super Draft @Robot3D 12mm",
+			"sub_path": "process/5.0mm Super Draft @Robot3D 12mm.json"
 		}
 	],
 	"filament_list": [],
@@ -54,16 +62,20 @@
 			"sub_path": "machine/fdm_aura3d_common.json"
 		},
 		{
-			"name": "Robot3D 0.4 nozzle",
-			"sub_path": "machine/Robot3D 0.4 nozzle.json"
+			"name": "Robot3D 3mm nozzle",
+			"sub_path": "machine/Robot3D 3mm nozzle.json"
 		},
 		{
-			"name": "Robot3D 0.6 nozzle",
-			"sub_path": "machine/Robot3D 0.6 nozzle.json"
+			"name": "Robot3D 6mm nozzle",
+			"sub_path": "machine/Robot3D 6mm nozzle.json"
 		},
 		{
-			"name": "Robot3D 0.8 nozzle",
-			"sub_path": "machine/Robot3D 0.8 nozzle.json"
+			"name": "Robot3D 9mm nozzle",
+			"sub_path": "machine/Robot3D 9mm nozzle.json"
+		},
+		{
+			"name": "Robot3D 12mm nozzle",
+			"sub_path": "machine/Robot3D 12mm nozzle.json"
 		}
 	]
 }
