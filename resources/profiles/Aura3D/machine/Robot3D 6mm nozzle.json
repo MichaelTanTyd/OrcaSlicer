@@ -1,0 +1,22 @@
+{
+	"type": "machine",
+	"name": "Robot3D 6mm nozzle",
+	"inherits": "fdm_aura3d_common",
+	"from": "system",
+	"setting_id": "Aura3D_R3D_N6",
+	"instantiation": "true",
+	"printer_model": "Robot3D",
+	"nozzle_diameter": ["6"],
+	"printer_variant": "6",
+	"max_layer_height": ["4.0"],
+	"min_layer_height": ["1.5"],
+	"printable_area": [
+		"0x0",
+		"1500x0",
+		"1500x1500",
+		"0x1500"
+	],
+	"printable_height": "1200",
+	"default_print_profile": "3.0mm Standard @Robot3D 6mm",
+	"default_filament_profile": "Generic PLA @System"
+}

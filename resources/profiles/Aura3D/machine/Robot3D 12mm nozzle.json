@@ -1,0 +1,22 @@
+{
+	"type": "machine",
+	"name": "Robot3D 12mm nozzle",
+	"inherits": "fdm_aura3d_common",
+	"from": "system",
+	"setting_id": "Aura3D_R3D_N12",
+	"instantiation": "true",
+	"printer_model": "Robot3D",
+	"nozzle_diameter": ["12"],
+	"printer_variant": "12",
+	"max_layer_height": ["5.0"],
+	"min_layer_height": ["3.0"],
+	"printable_area": [
+		"0x0",
+		"1500x0",
+		"1500x1500",
+		"0x1500"
+	],
+	"printable_height": "1200",
+	"default_print_profile": "5.0mm Super Draft @Robot3D 12mm",
+	"default_filament_profile": "Generic PLA @System"
+}
