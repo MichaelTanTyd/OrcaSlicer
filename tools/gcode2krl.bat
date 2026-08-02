@@ -7,7 +7,7 @@ REM v3.2: added crash dump for exit codes >= 128
 set LOGFILE=%~dp0gcode2krl_error.log
 set EXIT_CODE=0
 
-"%~dp0gcode2krl.exe" %*
+"%~dp0gcode2krl.exe" --split %*
 set EXIT_CODE=%ERRORLEVEL%
 
 if %EXIT_CODE% GTR 0 (

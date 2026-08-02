@@ -208,6 +208,18 @@ function foldFinish() {
 }
 
 // ──────────────────────────────────────────
+// Split mode constants (bytes estimated per GCode command)
+// ──────────────────────────────────────────
+const EST_G1_BYTES = 140;       // t[N]= PNT_LIN(...) + LIN t[N] C_DIS
+const EST_G0_BYTES = 80;        // PNT_G0(...)
+const EST_FAN_BYTES = 40;       // PNT_FAN_ON/OFF/SET
+const EST_G92_BYTES = 35;       // PNT_G92_E0()
+const EST_MISC_BYTES = 40;      // M82/M83/other
+const FOLD_OVERHEAD = 100;      // ;FOLD Layer N + ;ENDFOLD per layer
+const TARGET_CHUNK = 18 * 1024 * 1024;   // ~18 MB target
+const MAX_CHUNK = 20 * 1024 * 1024;      // 20 MB hard cap
+
+// ──────────────────────────────────────────
 // E-value state tracker
 // ──────────────────────────────────────────
 class EState {
@@ -511,17 +523,571 @@ function convert(inputPath, outputPath, jobName, progressCb) {
 }
 
 // ──────────────────────────────────────────
+// Split Mode: Scan layers (Pass 1) — estimate output size per layer
+// ──────────────────────────────────────────
+function scanLayers(lines) {
+  const layerInfos = [];
+  let currentLayer = null;
+  let lineNum = 0;
+  let preambleDone = false;
+
+  for (const raw of lines) {
+    lineNum++;
+    const trimmed = raw.trim();
+
+    // Layer boundary markers
+    if (trimmed.match(/^;(LAYER_CHANGE|BEFORE_LAYER_CHANGE|AFTER_LAYER_CHANGE)/i)) {
+      if (currentLayer) {
+        currentLayer.endLine = lineNum - 1;
+        layerInfos.push(currentLayer);
+      }
+      currentLayer = {
+        startLine: lineNum,
+        endLine: null,
+        isPreamble: false,
+        g1Count: 0,
+        g0Count: 0,
+        fanCount: 0,
+        g92Count: 0,
+        miscCount: 0,
+        estimatedBytes: 0,
+        layerIndex: layerInfos.length
+      };
+      preambleDone = true;
+      continue;
+    }
+
+    // Z marker — skip
+    if (trimmed.match(/^;Z:/i)) continue;
+
+    // Skip other comments (fast path)
+    if (raw.startsWith(';')) continue;
+
+    // Handle pre-first-layer content as preamble
+    if (!preambleDone && !currentLayer) {
+      currentLayer = {
+        startLine: 1,
+        endLine: null,
+        isPreamble: true,
+        g1Count: 0,
+        g0Count: 0,
+        fanCount: 0,
+        g92Count: 0,
+        miscCount: 0,
+        estimatedBytes: 0,
+        layerIndex: -1
+      };
+    }
+
+    const parsed = parseGCode(raw);
+    if (!parsed) continue;
+
+    const { cmd, params } = parsed;
+
+    if (cmd === 'G0' || cmd === 'G00') currentLayer.g0Count++;
+    else if (cmd === 'G1' || cmd === 'G01') currentLayer.g1Count++;
+    else if (cmd === 'M106' || cmd === 'M107') currentLayer.fanCount++;
+    else if (cmd === 'G92' && params.E !== undefined) currentLayer.g92Count++;
+    else if (cmd === 'M82' || cmd === 'M83') currentLayer.miscCount++;
+  }
+
+  // Push last layer
+  if (currentLayer) {
+    currentLayer.endLine = lines.length;
+    layerInfos.push(currentLayer);
+  }
+
+  // Calculate estimated bytes for each layer
+  for (const li of layerInfos) {
+    li.estimatedBytes =
+      li.g1Count * EST_G1_BYTES +
+      li.g0Count * EST_G0_BYTES +
+      li.fanCount * EST_FAN_BYTES +
+      li.g92Count * EST_G92_BYTES +
+      li.miscCount * EST_MISC_BYTES +
+      (li.isPreamble ? 0 : FOLD_OVERHEAD);
+  }
+
+  return layerInfos;
+}
+
+// ──────────────────────────────────────────
+// Split Mode: Group layers into ~18 MB chunks
+// ──────────────────────────────────────────
+function groupLayers(layerInfos) {
+  // Separate preamble from regular layers
+  const preamble = layerInfos.find(l => l.isPreamble);
+  const layers = layerInfos.filter(l => !l.isPreamble);
+
+  const chunks = [];
+  let currentChunk = {
+    layers: [],
+    totalBytes: 0,
+    firstLayerIndex: 0,
+    lastLayerIndex: -1
+  };
+
+  // Preamble always goes to the first chunk
+  if (preamble && (preamble.g1Count > 0 || preamble.g0Count > 0 || preamble.fanCount > 0)) {
+    currentChunk.layers.push(preamble);
+    currentChunk.totalBytes += preamble.estimatedBytes;
+  }
+
+  for (const layer of layers) {
+    const candidate = currentChunk.totalBytes + layer.estimatedBytes;
+
+    if (currentChunk.layers.length === 0 || candidate <= TARGET_CHUNK) {
+      // Fits within target: add to current chunk
+      currentChunk.layers.push(layer);
+      currentChunk.totalBytes += layer.estimatedBytes;
+      if (currentChunk.firstLayerIndex === 0 && !layer.isPreamble) {
+        currentChunk.firstLayerIndex = layer.layerIndex;
+      }
+      currentChunk.lastLayerIndex = layer.layerIndex;
+    } else if (candidate <= MAX_CHUNK) {
+      // Slightly over target but within max: accept
+      currentChunk.layers.push(layer);
+      currentChunk.totalBytes += layer.estimatedBytes;
+      currentChunk.lastLayerIndex = layer.layerIndex;
+    } else {
+      // Exceeds max: save current chunk, start new one
+      chunks.push(currentChunk);
+      currentChunk = {
+        layers: [layer],
+        totalBytes: layer.estimatedBytes,
+        firstLayerIndex: layer.layerIndex,
+        lastLayerIndex: layer.layerIndex
+      };
+
+      // Safety: warn if a single layer exceeds the max
+      if (layer.estimatedBytes > MAX_CHUNK) {
+        log(`WARNING: Layer ${layer.layerIndex} alone is ~${Math.round(layer.estimatedBytes / 1024 / 1024)}MB — exceeds ${Math.round(MAX_CHUNK / 1024 / 1024)}MB max`);
+      }
+    }
+  }
+
+  if (currentChunk.layers.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
+// ──────────────────────────────────────────
+// Split Mode: Write the main program
+// ──────────────────────────────────────────
+function writeMainProgram(outputDir, inputName, jobName, subNames, chunks, cfg) {
+  const mainPath = path.join(outputDir, jobName + '.SRC');
+  const out = new StreamWriter(mainPath);
+
+  // ── Header ──
+  out.writeLines(emitHeader(inputName));
+  out.writeLine(`DEF ${jobName}()`);
+  out.writeLine('');
+
+  // ── EXT declarations ──
+  for (const sn of subNames) {
+    out.writeLine(`EXT ${sn}()`);
+  }
+  out.writeLine('');
+
+  // ── Banner ──
+  out.writeLines(emitBanner());
+  out.writeLine('');
+
+  // ── FOLD INI (nested BASISTECH INI) ──
+  out.writeLine('  ;FOLD INI');
+  out.writeLine('    ;FOLD BASISTECH INI');
+  out.writeLine('      GLOBAL INTERRUPT DECL 3 WHEN $STOPMESS==TRUE DO IR_STOPM ( )');
+  out.writeLine('      INTERRUPT ON 3');
+  out.writeLine('      BAS (#INITMOV,0 )');
+  out.writeLine('    ;ENDFOLD (BASISTECH INI)');
+  out.writeLine('  ;ENDFOLD (INI)');
+  out.writeLine('');
+
+  // ── FOLD STARTPOSITION ──
+  const ax = cfg.axis;
+  const ct = cfg.cart;
+  const posComment = [
+    `A1 ${fmt1(ax.A1)}`,
+    `A2 ${fmt1(ax.A2)}`,
+    `A3 ${fmt1(ax.A3)}`,
+    `A4 ${fmt1(ax.A4)}`,
+    `A5 ${fmt1(ax.A5)}`,
+    `A6 ${fmt1(ax.A6)}`,
+    `E1 ${fmt1(ax.E1)}`,
+    'E2 0',
+    'E3 0',
+    'E4 0'
+  ].join(',');
+  out.writeLine(`  ;FOLD STARTPOSITION - BASE IS 1, TOOL IS 1, SPEED IS 20%, POSITION IS ${posComment}`);
+  out.writeLine('    $BWDSTART = FALSE');
+  out.writeLine('    PDAT_ACT = {VEL 20,ACC 100,APO_DIST 50}');
+  out.writeLine('    FDAT_ACT = {TOOL_NO 1,BASE_NO 1,IPO_FRAME #BASE}');
+  out.writeLine('    BAS (#PTP_PARAMS,20)');
+  out.writeLine(`    PTP {A1 ${fmt1(ax.A1)},A2 ${fmt1(ax.A2)},A3 ${fmt1(ax.A3)},A4 ${fmt1(ax.A4)},A5 ${fmt1(ax.A5)},A6 ${fmt1(ax.A6)},E1 ${fmt1(ax.E1)},E2 ${fmt1(ax.E2)},E3 ${fmt1(ax.E3)},E4 ${fmt1(ax.E4)}}`);
+  out.writeLine('  ;ENDFOLD');
+  out.writeLine('');
+
+  // ── FOLD LIN SPEED ──
+  out.writeLine(`  ;FOLD LIN SPEED IS ${cfg.speed} m/sec, INTERPOLATION SETTINGS IN FOLD`);
+  out.writeLine(`    $VEL.CP=${cfg.speed}`);
+  out.writeLine(`    $APO.CDIS=${cfg.cdis}`);
+  out.writeLine(`    $ADVANCE=${cfg.advance}`);
+  out.writeLine('  ;ENDFOLD');
+  out.writeLine('');
+
+  // ── FOLD Init PLC ──
+  out.writeLines(foldInitPLC(cfg));
+
+  // ── FOLD Print Path ──
+  out.writeLine('  ;FOLD Print Path');
+  out.writeLine('');
+
+  // Print info comments
+  out.writeLine(`    ;Chunks: ${chunks.length} sub-program(s), target chunk size ~${Math.round(TARGET_CHUNK / 1024 / 1024)} MB`);
+  for (let i = 0; i < chunks.length; i++) {
+    const c = chunks[i];
+    const mb = (c.totalBytes / 1024 / 1024).toFixed(1);
+    const first = c.firstLayerIndex;
+    const last = c.lastLayerIndex;
+    out.writeLine(`    ;  ${subNames[i]}: layers ${first}–${last}, ~${mb} MB`);
+  }
+  out.writeLine('');
+
+  for (const sn of subNames) {
+    out.writeLine(`    ${sn}()`);
+  }
+  out.writeLine('');
+  out.writeLine('  ;ENDFOLD');
+  out.writeLine('');
+
+  // ── FOLD Finish ──
+  out.writeLines(foldFinish());
+
+  // ── END ──
+  out.writeLine('');
+  out.writeLine('END');
+
+  out.close();
+  log(`Main program written: ${mainPath}`);
+}
+
+// ──────────────────────────────────────────
+// Split Mode: Write sub-programs (Pass 2)
+// ──────────────────────────────────────────
+function writeSubPrograms(outputDir, jobName, chunks, inputName, lines, cfg) {
+  const oriA = fmt2(cfg.cart.A);
+  const oriB = fmt2(cfg.cart.B);
+  const oriC = fmt2(cfg.cart.C);
+
+  // Build layer→chunk map: Map<layerIndex, chunkIndex>
+  // layerIndex 0..N-1 comes from the original layer numbering
+  const layerChunkMap = new Map();
+  for (let ci = 0; ci < chunks.length; ci++) {
+    for (const layer of chunks[ci].layers) {
+      if (!layer.isPreamble) {
+        layerChunkMap.set(layer.layerIndex, ci);
+      }
+    }
+  }
+
+  // Preamble goes to chunk 0
+  const preambleChunk = 0;
+
+  // Open writers for each sub-program
+  const subNames = chunks.map((_, i) => jobName + '_' + (i + 1));
+  const writers = {};
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const sp = path.join(outputDir, subNames[ci] + '.SRC');
+    writers[ci] = new StreamWriter(sp);
+
+    // Sub-program header
+    writers[ci].writeLines(emitHeader(inputName));
+    writers[ci].writeLine(`DEF ${subNames[ci]}()`);
+    writers[ci].writeLine('');
+    writers[ci].writeLine(`  ;═══════════════════════════════════════════════════════════`);
+    writers[ci].writeLine(`  ;${jobName} Sub-program #${ci + 1}`);
+
+    const c = chunks[ci];
+    const mb = (c.totalBytes / 1024 / 1024).toFixed(1);
+    if (c.firstLayerIndex > 0 || c.lastLayerIndex > 0) {
+      writers[ci].writeLine(`  ;Layers ${c.firstLayerIndex}–${c.lastLayerIndex}, ~${mb} MB`);
+    } else {
+      writers[ci].writeLine(`  ;Preamble only, ~${mb} MB`);
+    }
+    writers[ci].writeLine(`  ;═══════════════════════════════════════════════════════════`);
+    writers[ci].writeLine('');
+
+    // Each sub-program declares its own t[10] buffer
+    writers[ci].writeLine('  DECL E6POS t[10]');
+    writers[ci].writeLine('');
+  }
+
+  // ── State machine for pass 2 ──
+  let currentChunkIdx = -1;
+  let currentWriter = null;
+  let layerCount = 0;
+  let totalLayers = 0;
+  let prevZ = null;
+  let fanOn = false;
+  let inLayerFold = false;
+  let retracting = false;
+  let g92Emitted = false;
+  let tIdx = 0;
+  let preambleActive = true;  // true until first layer marker
+
+  // Count total layers
+  for (const raw of lines) {
+    if (raw.match(/^;(LAYER_CHANGE|BEFORE_LAYER_CHANGE|AFTER_LAYER_CHANGE|Z:)/i)) totalLayers++;
+  }
+
+  function ensureWriter(chunkIdx) {
+    if (chunkIdx !== currentChunkIdx) {
+      currentChunkIdx = chunkIdx;
+      currentWriter = writers[chunkIdx];
+    }
+  }
+
+  function nextT() {
+    if (tIdx === 10) {
+      currentWriter.writeLine('         ;back to t[1] avoid advance');
+    }
+    tIdx = (tIdx % 10) + 1;
+    return tIdx;
+  }
+
+  function closeLayerFold() {
+    if (inLayerFold && currentWriter) {
+      currentWriter.writeLine('      ;ENDFOLD');
+      currentWriter.writeLine('');
+      inLayerFold = false;
+    }
+  }
+
+  function openLayerFold(num, pct) {
+    if (currentWriter) {
+      currentWriter.writeLine(`      ;FOLD Layer ${num}`);
+      if (pct !== undefined) currentWriter.writeLine(`         ;Progress = ${pct}`);
+      inLayerFold = true;
+    }
+  }
+
+  let lineNum = 0;
+
+  for (const raw of lines) {
+    lineNum++;
+
+    // Pass through layer-related comments only
+    if (raw.startsWith(';')) {
+      if (raw.match(/^;(LAYER_CHANGE|BEFORE_LAYER_CHANGE|AFTER_LAYER_CHANGE|Z:|HEIGHT:|TYPE:|WIPE_START|WIPE_END)/)) {
+        // handle below
+      } else {
+        continue;
+      }
+    }
+
+    // ── First layer marker: switch from preamble to chunk 0 (if not already) ──
+    const isLayerBoundary = raw.match(/^;(LAYER_CHANGE|BEFORE_LAYER_CHANGE|AFTER_LAYER_CHANGE)/i);
+    const isZmarker = raw.match(/^;Z:/i);
+
+    if (isLayerBoundary) {
+      preambleActive = false;
+      closeLayerFold();
+      layerCount++;
+
+      // Look up which chunk this layer belongs to
+      const ci = layerChunkMap.get(layerCount);
+      if (ci !== undefined) {
+        ensureWriter(ci);
+      } else if (currentChunkIdx < 0) {
+        // Fallback: if layer not found in map, use last chunk or first
+        ensureWriter(preambleChunk);
+      }
+
+      const pct = totalLayers > 0 ? Math.round((layerCount / totalLayers) * 100) : 0;
+      openLayerFold(layerCount, pct);
+      if (currentWriter) {
+        currentWriter.writeLine('         PNT_G92_E0()');
+      }
+      g92Emitted = true;
+      continue;
+    }
+
+    // ── Z marker ──
+    if (isZmarker) {
+      const zVal = parseFloat(raw.split(':')[1]?.trim());
+      if (!isNaN(zVal)) {
+        if (prevZ !== null && zVal > prevZ + 0.001) layerCount++;
+        prevZ = zVal;
+      }
+      continue;
+    }
+
+    // ── Wipe markers ──
+    if (raw.match(/^;WIPE_START/i)) { if (currentWriter) currentWriter.writeLine('         ; WIPE_START'); continue; }
+    if (raw.match(/^;WIPE_END/i))   { if (currentWriter) currentWriter.writeLine('         ; WIPE_END');   continue; }
+
+    // ── Ensure we have a writer (preamble content before first layer) ──
+    if (preambleActive && currentChunkIdx < 0) {
+      ensureWriter(preambleChunk);
+    }
+
+    const parsed = parseGCode(raw);
+    if (!parsed) continue;
+
+    const { cmd, params } = parsed;
+
+    // ── M82/M83 ──
+    if (cmd === 'M82' || cmd === 'M83') continue;
+
+    // ── G92 E0 ──
+    if (cmd === 'G92' && params.E !== undefined && params.E === 0) {
+      if (g92Emitted) { g92Emitted = false; continue; }
+      if (currentWriter) currentWriter.writeLine('         PNT_G92_E0()');
+      continue;
+    }
+
+    // ── Fan control ──
+    if (cmd === 'M106') {
+      if (!currentWriter) continue;
+      const s = (params.S !== undefined) ? params.S : 255;
+      if (s === 0) {
+        if (fanOn) currentWriter.writeLine('         PNT_FAN_OFF()');
+        fanOn = false;
+      } else {
+        const pct = Math.round(s / 255 * 100);
+        currentWriter.writeLine(`         PNT_FAN_SET(${pct})`);
+        fanOn = true;
+      }
+      continue;
+    }
+    if (cmd === 'M107') {
+      if (fanOn && currentWriter) currentWriter.writeLine('         PNT_FAN_OFF()');
+      fanOn = false;
+      continue;
+    }
+
+    // ── G0: Travel move ──
+    if (cmd === 'G0' || cmd === 'G00') {
+      if (!currentWriter) continue;
+      const x = params.X, y = params.Y, z = params.Z;
+      const vel = params.F ? Math.round(params.F / 60) : 300;
+      currentWriter.writeLine(`         PNT_G0(${setVal(x, 0)}, ${setVal(y, 0)}, ${setVal(z, prevZ || 0)}, ${oriA}, ${oriB}, ${oriC}, ${vel})`);
+      continue;
+    }
+
+    // ── G1: Print/extrusion move ──
+    if (cmd === 'G1' || cmd === 'G01') {
+      if (!currentWriter) continue;
+      const x = params.X, y = params.Y, z = params.Z;
+      const e = params.E;
+      const vel = params.F ? Math.round(params.F / 60) : 50;
+      const idx = nextT();
+
+      currentWriter.writeLine(`         t[${idx}]= PNT_LIN(${fmt3(x, 0)}, ${fmt3(y, 0)}, ${fmt3(z, prevZ || 0)}, ${oriA}, ${oriB}, ${oriC}, ${fmt3(e)}, ${fmt1(vel)})`);
+      currentWriter.writeLine(`         LIN t[${idx}] C_DIS`);
+      continue;
+    }
+  }
+
+  // Close any open layer fold
+  closeLayerFold();
+
+  // Close all sub-programs
+  for (let ci = 0; ci < chunks.length; ci++) {
+    writers[ci].writeLine('');
+    writers[ci].writeLine('END');
+    const lineCount = writers[ci].count;
+    writers[ci].close();
+    log(`Sub-program #${ci + 1} written: ${subNames[ci]}.SRC (${lineCount} lines)`);
+  }
+
+  return subNames;
+}
+
+// ──────────────────────────────────────────
+// Split Mode: Main entry point
+// ──────────────────────────────────────────
+function convertSplit(inputPath, outputDir, jobName, progressCb) {
+  log(`Split mode: reading ${inputPath} (${fmtMem()})`);
+
+  let stat;
+  try { stat = fs.statSync(inputPath); } catch (e) { throw new Error(`Cannot stat input: ${e.message}`); }
+  const sizeMB = Math.round(stat.size / 1024 / 1024);
+  log(`Input size: ${sizeMB} MB`);
+
+  let input;
+  try {
+    input = fs.readFileSync(inputPath, 'utf-8');
+  } catch (e) {
+    throw new Error(`Cannot read input file: ${e.message}`);
+  }
+
+  if (!input || input.length === 0) {
+    throw new Error('Input file is empty');
+  }
+
+  const lines = input.split(/\r?\n/);
+  const cfg = sc();
+
+  log(`File read complete (${fmtMem()}). Scanning layers...`);
+
+  // Pass 1: Scan layers and estimate sizes
+  const layerInfos = scanLayers(lines);
+  const regularLayers = layerInfos.filter(l => !l.isPreamble);
+  log(`Found ${regularLayers.length} layer(s) + ${layerInfos.length - regularLayers.length} preamble section(s)`);
+
+  if (regularLayers.length === 0) {
+    log('WARNING: No layer markers found — falling back to single-file output');
+    // Fall back to normal conversion
+    const outputPath = path.join(outputDir, jobName + '.SRC');
+    return convert(inputPath, outputPath, jobName, progressCb);
+  }
+
+  // Group layers into chunks
+  const chunks = groupLayers(layerInfos);
+  log(`Grouped into ${chunks.length} chunk(s):`);
+  for (let i = 0; i < chunks.length; i++) {
+    const c = chunks[i];
+    const mb = (c.totalBytes / 1024 / 1024).toFixed(1);
+    const layerCount = c.layers.filter(l => !l.isPreamble).length;
+    const range = c.firstLayerIndex > 0 ? `Layers ${c.firstLayerIndex}–${c.lastLayerIndex}` : 'Preamble';
+    log(`  Chunk ${i + 1}: ${range}, ${layerCount} layer(s), ~${mb} MB`);
+  }
+
+  // Ensure output directory
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  // Pass 2: Write sub-programs
+  log(`Generating sub-programs... (${fmtMem()})`);
+  const subNames = writeSubPrograms(outputDir, jobName, chunks, path.basename(inputPath), lines, cfg);
+
+  // Write main program
+  log(`Generating main program...`);
+  writeMainProgram(outputDir, path.basename(inputPath), jobName, subNames, chunks, cfg);
+
+  log(`Split complete: 1 main + ${chunks.length} sub-program(s) → ${outputDir}`);
+  log(`Memory: ${fmtMem()}`);
+}
+
+// ──────────────────────────────────────────
 // CLI entry
 // ──────────────────────────────────────────
 function main() {
   const args = process.argv.slice(2);
 
   let inputPath, outputPath, jobName = '';
+  let splitMode = false;
 
-  // Parse args for --start-config and --name
+  // Parse args for --start-config, --name, --split
   const cleanArgs = [];
   for (let i = 0; i < args.length; i++) {
-    if (args[i].startsWith('--start-config=')) {
+    if (args[i] === '--split') {
+      splitMode = true;
+    } else if (args[i].startsWith('--start-config=')) {
       loadStartConfig(args[i].split('=')[1]);
     } else if (args[i].startsWith('--name=')) {
       jobName = args[i].split('=')[1];
@@ -534,7 +1100,11 @@ function main() {
     console.error('Usage:');
     console.error('  OrcaSlicer mode:  gcode2krl <gcode_file>                                  (in-place)');
     console.error('  Standalone mode:  gcode2krl <input.gcode> <output.src> [--name=JOB]       (input→output)');
+    console.error('  Split mode:       gcode2krl <input.gcode> <output_dir> --split             (main + sub-programs)');
     console.error('  With config:      gcode2krl <input> <output> --start-config=config.json');
+    console.error('');
+    console.error('Split mode generates a main .SRC + N sub-program .SRC files,');
+    console.error('each ~18 MB, split at complete layer boundaries.');
     console.error('');
     console.error('Config JSON fields:');
     console.error('  axis.{A1..A6,E1..E4}    Joint angles for PTP ready position');
@@ -549,17 +1119,30 @@ function main() {
 
   inputPath = cleanArgs[0];
 
-  if (cleanArgs.length >= 2) {
-    outputPath = cleanArgs[1];
+  if (splitMode) {
+    // Split mode: output is a directory
+    if (cleanArgs.length >= 2) {
+      outputPath = cleanArgs[1];
+    } else {
+      // Derive from input: input.gcode → input_split/
+      const inputDir = path.dirname(inputPath) || '.';
+      const inputBase = path.basename(inputPath, path.extname(inputPath));
+      outputPath = path.join(inputDir, inputBase + '_split');
+    }
   } else {
-    outputPath = inputPath;
+    if (cleanArgs.length >= 2) {
+      outputPath = cleanArgs[1];
+    } else {
+      outputPath = inputPath;
+    }
   }
 
   // Setup logging
   setupLog(outputPath);
 
-  log(`gcode2krl v3.2 starting`);
-  log(`Args: ${cleanArgs.join(' ')}`);
+  const version = splitMode ? 'v4.0 (split mode)' : 'v3.2';
+  log(`gcode2krl ${version} starting`);
+  log(`Args: ${cleanArgs.join(' ')} ${splitMode ? '--split' : ''}`);
 
   if (!fs.existsSync(inputPath)) {
     log(`ERROR: File not found: ${inputPath}`);
@@ -568,28 +1151,57 @@ function main() {
   }
 
   if (!jobName) {
-    jobName = path.basename(outputPath, path.extname(outputPath)).replace(/[^a-zA-Z0-9_]/g, '_');
+    if (splitMode) {
+      // For split mode, derive job name from input file
+      jobName = path.basename(inputPath, path.extname(inputPath)).replace(/[^a-zA-Z0-9_]/g, '_');
+    } else {
+      jobName = path.basename(outputPath, path.extname(outputPath)).replace(/[^a-zA-Z0-9_]/g, '_');
+    }
     if (!jobName || /^\d/.test(jobName)) jobName = 'P_' + jobName;
   }
 
-  log(`Converting ${path.basename(inputPath)} → ${path.basename(outputPath)} [${jobName}]`);
-  console.error(`gcode2krl v3.2: Converting ${path.basename(inputPath)}...`);
+  if (splitMode) {
+    // ── Split Mode ──
+    console.error(`gcode2krl v4.0 (split): Converting ${path.basename(inputPath)} → ${outputPath}\\`);
+    console.error(`  Target chunk: ~${Math.round(TARGET_CHUNK / 1024 / 1024)} MB, max: ${Math.round(MAX_CHUNK / 1024 / 1024)} MB`);
 
-  try {
-    const lineCount = convert(inputPath, outputPath, jobName, (n, total) => {
-      const pct = total > 0 ? Math.round(n / total * 100) : 0;
-      console.error(`  Progress: ${pct}% (${n}/${total} lines, ${fmtMem()})`);
-    });
-    console.error(`Generated: ${path.basename(outputPath)} (${lineCount} lines)`);
-    console.error(`gcode2krl: Done! Rename to .SRC before loading to KUKA controller.`);
-    log(`Success: ${lineCount} lines written`);
-    process.exit(0);
-  } catch (e) {
-    log(`FATAL: ${e.message}`);
-    log(`Stack: ${e.stack || '(no stack)'}`);
-    console.error(`ERROR: Conversion failed: ${e.message}`);
-    if (e.stack) console.error(e.stack);
-    process.exit(1);
+    try {
+      convertSplit(inputPath, outputPath, jobName, (n, total) => {
+        const pct = total > 0 ? Math.round(n / total * 100) : 0;
+        console.error(`  Progress: ${pct}% (${n}/${total} lines, ${fmtMem()})`);
+      });
+      console.error(`gcode2krl: Split done! ${outputPath}\\`);
+      console.error(`  Load all .SRC files to KUKA controller, run ${jobName}.SRC`);
+      log(`Split success → ${outputPath}`);
+      process.exit(0);
+    } catch (e) {
+      log(`FATAL: ${e.message}`);
+      log(`Stack: ${e.stack || '(no stack)'}`);
+      console.error(`ERROR: Split conversion failed: ${e.message}`);
+      if (e.stack) console.error(e.stack);
+      process.exit(1);
+    }
+  } else {
+    // ── Normal Mode ──
+    log(`Converting ${path.basename(inputPath)} → ${path.basename(outputPath)} [${jobName}]`);
+    console.error(`gcode2krl v3.2: Converting ${path.basename(inputPath)}...`);
+
+    try {
+      const lineCount = convert(inputPath, outputPath, jobName, (n, total) => {
+        const pct = total > 0 ? Math.round(n / total * 100) : 0;
+        console.error(`  Progress: ${pct}% (${n}/${total} lines, ${fmtMem()})`);
+      });
+      console.error(`Generated: ${path.basename(outputPath)} (${lineCount} lines)`);
+      console.error(`gcode2krl: Done! Rename to .SRC before loading to KUKA controller.`);
+      log(`Success: ${lineCount} lines written`);
+      process.exit(0);
+    } catch (e) {
+      log(`FATAL: ${e.message}`);
+      log(`Stack: ${e.stack || '(no stack)'}`);
+      console.error(`ERROR: Conversion failed: ${e.message}`);
+      if (e.stack) console.error(e.stack);
+      process.exit(1);
+    }
   }
 }
 
