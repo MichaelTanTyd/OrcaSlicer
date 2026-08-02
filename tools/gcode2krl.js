@@ -1124,10 +1124,8 @@ function main() {
     if (cleanArgs.length >= 2) {
       outputPath = cleanArgs[1];
     } else {
-      // Derive from input: input.gcode → input_split/
-      const inputDir = path.dirname(inputPath) || '.';
-      const inputBase = path.basename(inputPath, path.extname(inputPath));
-      outputPath = path.join(inputDir, inputBase + '_split');
+      // OrcaSlicer mode (single arg): put all .SRC files flat in same dir as input temp file
+      outputPath = path.dirname(inputPath);
     }
   } else {
     if (cleanArgs.length >= 2) {
@@ -1172,6 +1170,19 @@ function main() {
       });
       console.error(`gcode2krl: Split done! ${outputPath}\\`);
       console.error(`  Load all .SRC files to KUKA controller, run ${jobName}.SRC`);
+
+      // OrcaSlicer mode (single arg): write main .SRC back to input so OrcaSlicer outputs it
+      if (cleanArgs.length === 1) {
+        const mainSrcPath = path.join(outputPath, jobName + '.SRC');
+        if (fs.existsSync(mainSrcPath)) {
+          const mainContent = fs.readFileSync(mainSrcPath, 'utf-8');
+          fs.writeFileSync(inputPath, mainContent, 'utf-8');
+          console.error(`  OrcaSlicer: wrote main .SRC back to ${path.basename(inputPath)}`);
+          console.error(`  Sub-programs are in: ${outputPath}\\`);
+          log(`OrcaSlicer mode: wrote main .SRC to input file ${inputPath}`);
+        }
+      }
+
       log(`Split success → ${outputPath}`);
       process.exit(0);
     } catch (e) {
