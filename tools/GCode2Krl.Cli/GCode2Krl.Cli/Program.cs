@@ -192,22 +192,42 @@ public static class Program
         // It expects the post-processor to modify this file in-place; whatever content
         // the file has after processing is what OrcaSlicer outputs to the user's directory.
         //
-        // For split mode, sub-programs are generated alongside but would be stranded
-        // in the temp Metadata directory. We mirror ALL generated .SRC files to
-        // {exe_dir}\krl_output\{jobName}\ so the user has a single, fixed place to find them.
+        // For split mode, sub-programs cannot follow because the post-processor
+        // has no knowledge of the user's chosen export path (that's an OrcaSlicer UI concern).
+        // As a workaround, we embed the sub-program file paths directly in the main .SRC
+        // header so the user knows exactly where to find them.
         if (isOrcaSlicerMode)
         {
             var mainSrcPath = Path.Combine(outputDir, jobName + ".SRC");
             if (File.Exists(mainSrcPath))
             {
-                // Write main .SRC back to .pp so OrcaSlicer outputs it as the converted result
+                // Build a header comment listing all sub-program locations
+                var splitHeader = BuildSplitLocationHeader(outputDir, jobName);
+
+                // Read main .SRC content
                 var mainContent = File.ReadAllBytes(mainSrcPath);
-                File.WriteAllBytes(inputPath, mainContent);
-                Console.Error.WriteLine($"  OrcaSlicer: wrote main .SRC back to {inputBase}");
+
+                // Insert location header after the &PARAM lines, before DEF
+                var mainText = System.Text.Encoding.UTF8.GetString(mainContent);
+                var defIdx = mainText.IndexOf("\nDEF ");
+                if (defIdx >= 0)
+                {
+                    mainText = mainText[..(defIdx + 1)] + splitHeader + mainText[(defIdx + 1)..];
+                }
+                else
+                {
+                    // Fallback: prepend before END
+                    var endIdx = mainText.LastIndexOf("\nEND");
+                    if (endIdx >= 0)
+                        mainText = mainText[..endIdx] + splitHeader + mainText[endIdx..];
+                }
+
+                // Write modified content back to .pp so OrcaSlicer outputs it
+                File.WriteAllBytes(inputPath, System.Text.Encoding.UTF8.GetBytes(mainText));
+                Console.Error.WriteLine($"  OrcaSlicer: wrote main .SRC (with sub-program paths) back to {inputBase}");
                 CrashLogger.Log($"OrcaSlicer mode: wrote main .SRC to input file {inputPath}");
 
-                // Mirror split output to user-specified directory (if --output-dir was provided)
-                // or to CWD as a fallback. Always logs the path so the user knows where files are.
+                // Mirror to user-specified directory if --output-dir was provided
                 MirrorSplitOutput(outputDir, jobName, mirrorDir);
             }
         }
@@ -281,6 +301,34 @@ public static class Program
             Console.Error.WriteLine($"  Files are still in: {sourceDir}\\");
             CrashLogger.Log($"Mirror failed ({mirrorDir}): {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Build a header comment block listing the paths of all split output files.
+    /// Embedded in the main .SRC so the user knows exactly where sub-programs live.
+    /// </summary>
+    private static string BuildSplitLocationHeader(string outputDir, string jobName)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("");
+        sb.AppendLine("  ;═══════════════════════════════════════════════════════════");
+        sb.AppendLine("  ;KRL SPLIT OUTPUT — Sub-program files are located at:");
+        sb.AppendLine($"  ;  {outputDir}\\");
+
+        try
+        {
+            var files = Directory.GetFiles(outputDir, jobName + "*.SRC")
+                .Select(f => Path.GetFileName(f))
+                .Where(f => f != jobName + ".SRC")  // skip self
+                .OrderBy(f => f);
+
+            foreach (var f in files)
+                sb.AppendLine($"  ;    {f}");
+        }
+        catch { /* best-effort */ }
+
+        sb.AppendLine("  ;═══════════════════════════════════════════════════════════");
+        return sb.ToString();
     }
 
     /// <summary>Print CLI usage instructions</summary>
