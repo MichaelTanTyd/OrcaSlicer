@@ -67,7 +67,6 @@ public static class Program
       else
         cleanArgs.Add(arg);
 
-      CrashLogger.Log($"=============Debug=============: {arg}");
     }
 
     // ── Validate arguments ──

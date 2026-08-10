@@ -1,19 +1,18 @@
 {
-  "split": false,
-  "splitOutputDir": null,
+  "split": true,
+  "splitOutputDir": "D:\\IJK\\OrcaSlicer\\tools\\GCode2Krl.Cli\\publish",
   "_comment": "gcode2krl v3.2 起始位置配置 — KR210 R2700 + E26 Pellet Extruder",
   "_comment_note": "axis: PTP 就绪姿态（关节角）；cart: LIN 接近位置 + 打印姿态（欧拉角）",
   "_comment_heat": "默认 260°C 覆盖 PLA~PA；高温材料(PC-GF/PPS)切片时在 start-config 中覆盖",
-  "_comment_split": "split: true=拆包模式(主程序+子程序), false=单文件模式; splitOutputDir: 拆包时镜像输出目录",
   "axis": {
     "A1": 0,       "A2": -125,  "A3": 125.86,
     "A4": -90,    "A5": -25,   "A6": 83,
     "E1": 0,       "E2": 0,       "E3": 0,       "E4": 0
   },
   "cart": {
-    "X": 0,        "Y": 0,         "Z": 300,
+    "X": 0,        "Y": 0,         "Z": 200,
     "A": 0,      "B": 0,     "C": -180,
-    "E1": 0,       "E2": 0,        "E3": 0,       "E4": 0
+    "E1": 1,       "E2": 0,        "E3": 0,       "E4": 0
   },
   "speed": 0.25,
   "cdis": 10,

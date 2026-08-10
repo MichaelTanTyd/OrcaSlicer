@@ -1,4 +1,4 @@
-REM @echo off
+@echo off
 REM gcode2krl.bat — wrapper for C# gcode2krl.exe
 REM Place next to gcode2krl.exe in the publish directory
 REM v4.0 C# edition — split mode controlled by start_position.json
