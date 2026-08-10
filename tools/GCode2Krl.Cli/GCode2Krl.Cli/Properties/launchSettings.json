@@ -1,0 +1,7 @@
+{
+  "profiles": {
+    "GCode2Krl.Cli": {
+      "commandName": "Project"
+    }
+  }
+}
