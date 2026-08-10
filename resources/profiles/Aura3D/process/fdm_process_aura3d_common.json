@@ -55,11 +55,12 @@
 	"enable_arc_fitting": "0",
 	"filename_format": "{input_filename_base}_{layer_height}mm_{filament_type[initial_tool]}_KR210.gcode",
 	"post_process": [
-		"D:\\IJK\\OrcaSlicer\\tools\\gcode2krl.bat"
+		"D:\\IJK\\OrcaSlicer\\tools\\GCode2Krl.Cli\\publish\\gcode2krl.bat"
 	],
 	"notes": [
 		"KUKA KR210 R2700 Robotic 3D Printing (Pellet Extruder E26, 26kg/h max)",
-		"G-code will be converted to KRL via post-processor gcode2krl",
+		"Post-processor: gcode2krl v4.0 C# exe (12 MB, zero-dependency)",
+		"Config: start_position.json controls axis/cart/heat/split mode",
 		"Firmware retraction enabled — PNT_RETRACT/PNT_UNRETRACT handle screw reversal",
 		"No part cooling fan — natural cooling for large beads"
 	]

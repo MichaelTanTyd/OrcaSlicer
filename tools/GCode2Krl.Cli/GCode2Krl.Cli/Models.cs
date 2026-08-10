@@ -50,7 +50,8 @@ public sealed class HeatConfig
     public double T6 { get; set; } = 0;
 }
 
-/// <summary>Full start-position configuration (loaded from JSON)</summary>
+/// <summary>Full start-position configuration (loaded from JSON). Ignores unknown fields.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Skip)]
 public sealed class StartConfig
 {
     public AxisConfig Axis { get; set; } = new();
