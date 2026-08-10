@@ -1,0 +1,2 @@
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\publish\gcode2krl.pdb
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\publish\gcode2krl.exe

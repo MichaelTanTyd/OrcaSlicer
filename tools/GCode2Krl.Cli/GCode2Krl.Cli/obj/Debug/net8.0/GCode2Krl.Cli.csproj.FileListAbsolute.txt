@@ -1,0 +1,15 @@
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\bin\Debug\net8.0\gcode2krl.exe
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\bin\Debug\net8.0\gcode2krl.deps.json
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\bin\Debug\net8.0\gcode2krl.runtimeconfig.json
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\bin\Debug\net8.0\gcode2krl.dll
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\bin\Debug\net8.0\gcode2krl.pdb
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Debug\net8.0\GCode2Krl.Cli.GeneratedMSBuildEditorConfig.editorconfig
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Debug\net8.0\GCode2Krl.Cli.AssemblyInfoInputs.cache
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Debug\net8.0\GCode2Krl.Cli.AssemblyInfo.cs
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Debug\net8.0\GCode2Krl.Cli.csproj.CoreCompileInputs.cache
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Debug\net8.0\GCode2Krl.Cli.sourcelink.json
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Debug\net8.0\gcode2krl.dll
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Debug\net8.0\refint\gcode2krl.dll
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Debug\net8.0\gcode2krl.pdb
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Debug\net8.0\GCode2Krl.Cli.genruntimeconfig.cache
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Debug\net8.0\ref\gcode2krl.dll
