@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("gcode2krl")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+57821813abfff2ab9771a3f2933e9cfb9bba3d50")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+99ecc503c1405ac3af51cb0235fe3f7a11e94e6c")]
 [assembly: System.Reflection.AssemblyProductAttribute("gcode2krl")]
 [assembly: System.Reflection.AssemblyTitleAttribute("gcode2krl")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -275,17 +275,15 @@ public static class Program
     }
 
     /// <summary>
-    /// Mirror all generated .SRC files to a user-specified directory.
-    /// When --output-dir is provided, files are copied there so the user
-    /// has a single, predictable place to find them (no temp-directory hunting).
-    /// Without --output-dir, files stay in the source directory only.
+    /// Mirror ALL generated .SRC files (main + sub-programs) to a user-specified directory
+    /// with clean timestamp-based filenames like Split_08101534.src, Split_08101534_1.src.
     /// </summary>
     private static void MirrorSplitOutput(string sourceDir, string jobName, string? mirrorDir)
     {
         if (string.IsNullOrWhiteSpace(mirrorDir))
         {
             Console.Error.WriteLine($"  Split output is in: {sourceDir}\\");
-            Console.Error.WriteLine($"  Tip: add --output-dir=D:\\path to your OrcaSlicer post-processing args");
+            Console.Error.WriteLine($"  Tip: set splitOutputDir in your start-config.json for auto-mirror");
             return;
         }
 
@@ -293,21 +291,42 @@ public static class Program
         {
             Directory.CreateDirectory(mirrorDir);
 
-            var srcFiles = Directory.GetFiles(sourceDir, jobName + "*.SRC");
-            foreach (var src in srcFiles)
+            // Timestamp prefix like "Split_08101534"
+            var now = DateTime.Now;
+            var tsPrefix = $"Split_{now:MMddHHmmss}";
+
+            // Copy main .SRC as Split_MMddHHmmss.src
+            var mainSrc = Path.Combine(sourceDir, jobName + ".SRC");
+            if (File.Exists(mainSrc))
             {
-                var dest = Path.Combine(mirrorDir, Path.GetFileName(src));
-                File.Copy(src, dest, overwrite: true);
+                var mainDest = Path.Combine(mirrorDir, tsPrefix + ".src");
+                File.Copy(mainSrc, mainDest, overwrite: true);
             }
 
-            Console.Error.WriteLine($"  Split output mirrored → {mirrorDir}\\");
-            CrashLogger.Log($"Split output mirrored: {srcFiles.Length} file(s) → {mirrorDir}");
+            // Copy sub-programs as Split_MMddHHmmss_1.src, _2.src, etc.
+            var subFiles = Directory.GetFiles(sourceDir, jobName + "_*.SRC")
+                .OrderBy(f => f)
+                .ToArray();
+
+            for (var i = 0; i < subFiles.Length; i++)
+            {
+                var subDest = Path.Combine(mirrorDir, $"{tsPrefix}_{i + 1}.src");
+                File.Copy(subFiles[i], subDest, overwrite: true);
+            }
+
+            var totalFiles = (File.Exists(mainSrc) ? 1 : 0) + subFiles.Length;
+            Console.Error.WriteLine($"  Mirrored {totalFiles} file(s) → {mirrorDir}\\");
+            Console.Error.WriteLine($"    {tsPrefix}.src  (main)");
+            for (var i = 0; i < subFiles.Length; i++)
+                Console.Error.WriteLine($"    {tsPrefix}_{i + 1}.src  (sub)");
+
+            CrashLogger.Log($"Mirrored {totalFiles} file(s) to {mirrorDir} as {tsPrefix}_*.src");
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"  Warning: could not mirror to {mirrorDir}: {ex.Message}");
+            Console.Error.WriteLine($"  Warning: mirror failed ({ex.Message})");
             Console.Error.WriteLine($"  Files are still in: {sourceDir}\\");
-            CrashLogger.Log($"Mirror failed ({mirrorDir}): {ex.Message}");
+            CrashLogger.Log($"Mirror failed: {ex.Message}");
         }
     }
 
