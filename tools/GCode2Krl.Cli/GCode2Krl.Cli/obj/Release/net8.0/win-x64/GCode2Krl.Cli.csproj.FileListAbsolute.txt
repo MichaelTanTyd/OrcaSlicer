@@ -195,4 +195,4 @@ D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Release\net8.0\win-x64\r
 D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Release\net8.0\win-x64\gcode2krl.pdb
 D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Release\net8.0\win-x64\GCode2Krl.Cli.genruntimeconfig.cache
 D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\obj\Release\net8.0\win-x64\ref\gcode2krl.dll
-D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\bin\Release\net8.0\win-x64\mscordaccore_amd64_amd64_8.0.2626.16921.dll
+D:\IJK\OrcaSlicer\tools\GCode2Krl.Cli\GCode2Krl.Cli\bin\Release\net8.0\win-x64\mscordaccore_amd64_amd64_8.0.2926.32403.dll

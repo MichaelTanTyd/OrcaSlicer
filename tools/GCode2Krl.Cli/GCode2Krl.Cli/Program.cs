@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace GCode2Krl.Cli;
@@ -264,13 +265,71 @@ public static class Program
     try
     {
       var json = File.ReadAllText(configPath);
-      var cfg = JsonSerializer.Deserialize(json, AppJsonContext.Default.StartConfig);
-      if (cfg != null)
+
+      // Manually parse with JsonDocument to avoid System.Text.Json source-generator
+      // nested-object deserialization bug where some properties silently return defaults.
+      using var doc = JsonDocument.Parse(json);
+      var root = doc.RootElement;
+      var cfg = new StartConfig();
+
+      // Split mode
+      if (root.TryGetProperty("split", out var sp)) cfg.Split = sp.GetBoolean();
+      if (root.TryGetProperty("splitOutputDir", out var sod) && sod.ValueKind != JsonValueKind.Null)
+        cfg.SplitOutputDir = sod.GetString();
+
+      // Axis
+      if (root.TryGetProperty("axis", out var ax))
       {
-        // Deep-merge: top-level properties replace, nested objects merge
-        s_config = cfg;
+        cfg.Axis = new AxisConfig();
+        if (ax.TryGetProperty("A1", out var v)) cfg.Axis.A1 = v.GetDouble();
+        if (ax.TryGetProperty("A2", out v)) cfg.Axis.A2 = v.GetDouble();
+        if (ax.TryGetProperty("A3", out v)) cfg.Axis.A3 = v.GetDouble();
+        if (ax.TryGetProperty("A4", out v)) cfg.Axis.A4 = v.GetDouble();
+        if (ax.TryGetProperty("A5", out v)) cfg.Axis.A5 = v.GetDouble();
+        if (ax.TryGetProperty("A6", out v)) cfg.Axis.A6 = v.GetDouble();
+        if (ax.TryGetProperty("E1", out v)) cfg.Axis.E1 = v.GetDouble();
+        if (ax.TryGetProperty("E2", out v)) cfg.Axis.E2 = v.GetDouble();
+        if (ax.TryGetProperty("E3", out v)) cfg.Axis.E3 = v.GetDouble();
+        if (ax.TryGetProperty("E4", out v)) cfg.Axis.E4 = v.GetDouble();
       }
+
+      // Cart
+      if (root.TryGetProperty("cart", out var ct))
+      {
+        cfg.Cart = new CartConfig();
+        if (ct.TryGetProperty("X", out var v)) cfg.Cart.X = v.GetDouble();
+        if (ct.TryGetProperty("Y", out v)) cfg.Cart.Y = v.GetDouble();
+        if (ct.TryGetProperty("Z", out v)) cfg.Cart.Z = v.GetDouble();
+        if (ct.TryGetProperty("A", out v)) cfg.Cart.A = v.GetDouble();
+        if (ct.TryGetProperty("B", out v)) cfg.Cart.B = v.GetDouble();
+        if (ct.TryGetProperty("C", out v)) cfg.Cart.C = v.GetDouble();
+        if (ct.TryGetProperty("E1", out v)) cfg.Cart.E1 = v.GetDouble();
+        if (ct.TryGetProperty("E2", out v)) cfg.Cart.E2 = v.GetDouble();
+        if (ct.TryGetProperty("E3", out v)) cfg.Cart.E3 = v.GetDouble();
+        if (ct.TryGetProperty("E4", out v)) cfg.Cart.E4 = v.GetDouble();
+      }
+
+      // Top-level values
+      if (root.TryGetProperty("speed", out var sv)) cfg.Speed = sv.GetDouble();
+      if (root.TryGetProperty("cdis", out var cv)) cfg.Cdis = cv.GetDouble();
+      if (root.TryGetProperty("advance", out var av)) cfg.Advance = av.GetInt32();
+      if (root.TryGetProperty("heatMinTemp", out var ht)) cfg.HeatMinTemp = ht.GetInt32();
+
+      // Heat
+      if (root.TryGetProperty("heat", out var he))
+      {
+        cfg.Heat = new HeatConfig();
+        if (he.TryGetProperty("T1", out var v)) cfg.Heat.T1 = v.GetDouble();
+        if (he.TryGetProperty("T2", out v)) cfg.Heat.T2 = v.GetDouble();
+        if (he.TryGetProperty("T3", out v)) cfg.Heat.T3 = v.GetDouble();
+        if (he.TryGetProperty("T4", out v)) cfg.Heat.T4 = v.GetDouble();
+        if (he.TryGetProperty("T5", out v)) cfg.Heat.T5 = v.GetDouble();
+        if (he.TryGetProperty("T6", out v)) cfg.Heat.T6 = v.GetDouble();
+      }
+
+      s_config = cfg;
       CrashLogger.Log($"Loaded start config from {configPath}");
+      CrashLogger.Log($"Config readback — axis.A1={cfg.Axis.A1}, axis.A2={cfg.Axis.A2}, axis.E1={cfg.Axis.E1}");
     }
     catch (Exception ex)
     {
