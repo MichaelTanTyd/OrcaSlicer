@@ -70,8 +70,9 @@ public static class Program
 
         var inputPath = cleanArgs[0];
 
-        // Determine output path
+        // Determine output path and detect OrcaSlicer mode (single-arg invocation)
         string outputPath;
+        var isOrcaSlicerMode = cleanArgs.Count == 1;
         if (splitMode)
         {
             outputPath = cleanArgs.Count >= 2 ? cleanArgs[1] : Path.GetDirectoryName(inputPath)!;
@@ -118,7 +119,7 @@ public static class Program
         {
             if (splitMode)
             {
-                RunSplit(inputPath, outputPath, jobName);
+                RunSplit(inputPath, outputPath, jobName, isOrcaSlicerMode);
             }
             else
             {
@@ -162,10 +163,15 @@ public static class Program
 
     // ── Split mode ──
 
-    private static void RunSplit(string inputPath, string outputDir, string jobName)
+    /// <summary>
+    /// Run split-mode conversion.
+    /// When isOrcaSlicerMode is true (single-arg invocation), the main .SRC content
+    /// is written back to the input file so OrcaSlicer can output the converted result.
+    /// </summary>
+    private static void RunSplit(string inputPath, string outputDir, string jobName, bool isOrcaSlicerMode)
     {
         var inputBase = Path.GetFileName(inputPath);
-        var targetMb = (int)Math.Round(18.0); // TargetChunk / 1024 / 1024
+        var targetMb = (int)Math.Round(18.0);
         var maxMb = 20;
 
         Console.Error.WriteLine($"gcode2krl v4.0 (split): Converting {inputBase} → {outputDir}\\");
@@ -178,12 +184,34 @@ public static class Program
                 Console.Error.WriteLine($"  Progress: {pct}% ({current}/{total} lines, {MemReporter.FmtMem()})");
             });
 
+        // ── OrcaSlicer mode: write main .SRC back to input temp file ──
+        // OrcaSlicer invokes the post-processor with a single argument (the temp .pp file).
+        // It expects the post-processor to modify this file in-place; whatever content
+        // the file has after processing is what OrcaSlicer outputs to the user's directory.
+        //
+        // For split mode, sub-programs are generated alongside but would be stranded
+        // in the temp Metadata directory. We mirror ALL generated .SRC files to
+        // {exe_dir}\krl_output\{jobName}\ so the user has a single, fixed place to find them.
+        if (isOrcaSlicerMode)
+        {
+            var mainSrcPath = Path.Combine(outputDir, jobName + ".SRC");
+            if (File.Exists(mainSrcPath))
+            {
+                // Write main .SRC back to .pp so OrcaSlicer outputs it as the converted result
+                var mainContent = File.ReadAllBytes(mainSrcPath);
+                File.WriteAllBytes(inputPath, mainContent);
+                Console.Error.WriteLine($"  OrcaSlicer: wrote main .SRC back to {inputBase}");
+                CrashLogger.Log($"OrcaSlicer mode: wrote main .SRC to input file {inputPath}");
+
+                // Try to mirror split output to current working directory.
+                // If OrcaSlicer sets CWD to the user's export directory, files land there.
+                // Otherwise, they stay in the .pp's directory (Metadata temp folder).
+                MirrorSplitOutput(outputDir, jobName);
+            }
+        }
+
         Console.Error.WriteLine($"gcode2krl: Split done! {outputDir}\\");
         Console.Error.WriteLine($"  Load all .SRC files to KUKA controller, run {jobName}.SRC");
-
-        // OrcaSlicer mode (single arg): write main .SRC back to input so OrcaSlicer picks it up
-        // This only applies when invoked with a single arg in split mode
-        // (handled by ConvertSplit internally for OrcaSlicer compatibility)
         CrashLogger.Log($"Split success → {outputDir}");
     }
 
@@ -213,6 +241,49 @@ public static class Program
         {
             CrashLogger.Log($"Warning: could not load start config ({configPath}), using defaults. {ex.Message}");
             s_config = new StartConfig();
+        }
+    }
+
+    /// <summary>
+    /// Mirror all generated .SRC files from the temp output directory to the
+    /// current working directory (CWD). If OrcaSlicer sets CWD to the user's
+    /// export directory, the files land right where the user expects them.
+    /// Falls back gracefully — files always remain in the source directory.
+    /// </summary>
+    private static void MirrorSplitOutput(string sourceDir, string jobName)
+    {
+        try
+        {
+            var cwd = Environment.CurrentDirectory;
+            Console.Error.WriteLine($"  CWD: {cwd}");
+            CrashLogger.Log($"OrcaSlicer CWD: {cwd}");
+
+            // Only mirror if CWD is different from and not inside the source dir
+            var srcFull = Path.GetFullPath(sourceDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var cwdFull = Path.GetFullPath(cwd).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            if (string.Equals(srcFull, cwdFull, StringComparison.OrdinalIgnoreCase))
+            {
+                // Same directory — files are already in the right place, nothing to mirror
+                Console.Error.WriteLine($"  Split output is in CWD — files are already where you need them.");
+                return;
+            }
+
+            // Mirror to CWD
+            var srcFiles = Directory.GetFiles(sourceDir, jobName + "*.SRC");
+            foreach (var src in srcFiles)
+            {
+                var dest = Path.Combine(cwd, Path.GetFileName(src));
+                File.Copy(src, dest, overwrite: true);
+            }
+
+            Console.Error.WriteLine($"  Split output mirrored to CWD: {cwd}\\");
+            CrashLogger.Log($"Split output mirrored: {srcFiles.Length} file(s) → {cwd}");
+        }
+        catch (Exception ex)
+        {
+            // Best-effort: files are still intact in the source directory
+            CrashLogger.Log($"Info: could not mirror split output to CWD: {ex.Message}");
         }
     }
 

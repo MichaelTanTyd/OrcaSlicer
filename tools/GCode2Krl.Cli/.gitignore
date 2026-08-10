@@ -1,0 +1,9 @@
+# Build output
+bin/
+obj/
+*.user
+*.suo
+*.cache
+
+# Publish output (keep only the final exe in publish/)
+publish/gcode2krl.pdb
