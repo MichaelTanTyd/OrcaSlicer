@@ -13,11 +13,11 @@ public readonly record struct GCodeCommand(string Cmd, Dictionary<char, double> 
 public sealed class AxisConfig
 {
     public double A1 { get; set; } = 5;
-    public double A2 { get; set; } = -85.75;
-    public double A3 { get; set; } = 109.02;
-    public double A4 { get; set; } = 0.30;
-    public double A5 { get; set; } = 64.18;
-    public double A6 { get; set; } = 2.93;
+    public double A2 { get; set; } = -125;
+    public double A3 { get; set; } = 125.86;
+    public double A4 { get; set; } = -90;
+    public double A5 { get; set; } = -25;
+    public double A6 { get; set; } = 83;
     public double E1 { get; set; } = 0;
     public double E2 { get; set; } = 0;
     public double E3 { get; set; } = 0;
@@ -29,10 +29,10 @@ public sealed class CartConfig
 {
     public double X { get; set; } = 0;
     public double Y { get; set; } = 0;
-    public double Z { get; set; } = 200;
-    public double A { get; set; } = 112;
-    public double B { get; set; } = 20.03;
-    public double C { get; set; } = -177.85;
+    public double Z { get; set; } = 300;
+    public double A { get; set; } = 0;
+    public double B { get; set; } = 0;
+    public double C { get; set; } = -180;
     public double E1 { get; set; } = 0;
     public double E2 { get; set; } = 0;
     public double E3 { get; set; } = 0;
@@ -56,10 +56,10 @@ public sealed class StartConfig
     public AxisConfig Axis { get; set; } = new();
     public CartConfig Cart { get; set; } = new();
     public double Speed { get; set; } = 0.25;
-    public double Cdis { get; set; } = 100;
+    public double Cdis { get; set; } = 10;
     public int Advance { get; set; } = 3;
     public HeatConfig Heat { get; set; } = new();
-    public int HeatMinTemp { get; set; } = 180;
+    public int HeatMinTemp { get; set; } = 200;
 
     /// <summary>Enable split mode (main .SRC + sub-programs). Default: false (single file)</summary>
     public bool Split { get; set; } = false;
