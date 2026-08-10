@@ -60,6 +60,17 @@ public sealed class StartConfig
     public int Advance { get; set; } = 3;
     public HeatConfig Heat { get; set; } = new();
     public int HeatMinTemp { get; set; } = 180;
+
+    /// <summary>Enable split mode (main .SRC + sub-programs). Default: false (single file)</summary>
+    public bool Split { get; set; } = false;
+
+    /// <summary>
+    /// Optional directory to mirror split sub-program files.
+    /// When set in OrcaSlicer mode, sub-program .SRC files are copied here
+    /// so you don't have to hunt through temp directories.
+    /// Leave empty/null to rely on the embedded path comment in the main .SRC.
+    /// </summary>
+    public string? SplitOutputDir { get; set; }
 }
 
 /// <summary>Metadata for a single layer — used in split-mode Pass 1</summary>

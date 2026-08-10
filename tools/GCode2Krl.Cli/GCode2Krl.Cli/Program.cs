@@ -89,6 +89,14 @@ public static class Program
         if (configPath != null)
             LoadStartConfig(configPath);
 
+        // ── Config-driven overrides (CLI flags always win) ──
+        // If the user didn't pass --split on the command line,
+        // check the JSON config's "split" field to decide.
+        if (!splitMode) splitMode = s_config.Split;
+
+        // If the user didn't pass --output-dir, use config's splitOutputDir
+        mirrorDir ??= s_config.SplitOutputDir;
+
         // ── Setup logging ──
         CrashLogger.SetupLog(outputPath);
 
@@ -352,12 +360,21 @@ public static class Program
         Console.Error.WriteLine("  gcode2krl.exe --split --output-dir=D:\\MyKRLPrints");
         Console.Error.WriteLine("");
         Console.Error.WriteLine("Config JSON fields:");
-        Console.Error.WriteLine("  axis.{A1..A6,E1..E4}    Joint angles for PTP ready position");
-        Console.Error.WriteLine("  cart.{X,Y,Z,A,B,C,E1..E4}  Approach position and tool orientation");
-        Console.Error.WriteLine("  speed                   Approach speed (m/s, default 0.25)");
-        Console.Error.WriteLine("  cdis                    Approximation distance (mm, default 100)");
-        Console.Error.WriteLine("  advance                 Look-ahead buffer (default 3)");
-        Console.Error.WriteLine("  heat.{T1..T6}           Target temperatures per zone");
-        Console.Error.WriteLine("  heatMinTemp             Minimum temp to wait for all zones (default 180)");
+        Console.Error.WriteLine("  axis.{A1..A6,E1..E4}     Joint angles for PTP ready position");
+        Console.Error.WriteLine("  cart.{X,Y,Z,A,B,C,E1..E4} Approach position and tool orientation");
+        Console.Error.WriteLine("  speed                    Approach speed (m/s, default 0.25)");
+        Console.Error.WriteLine("  cdis                     Approximation distance (mm, default 100)");
+        Console.Error.WriteLine("  advance                  Look-ahead buffer (default 3)");
+        Console.Error.WriteLine("  heat.{T1..T6}            Target temperatures per zone");
+        Console.Error.WriteLine("  heatMinTemp              Minimum temp to wait for all zones (default 180)");
+        Console.Error.WriteLine("  split                    true to enable split mode (default false)");
+        Console.Error.WriteLine("  splitOutputDir           Mirror sub-programs to this directory (optional)");
+        Console.Error.WriteLine("");
+        Console.Error.WriteLine("Example start-config.json for OrcaSlicer:");
+        Console.Error.WriteLine("  {");
+        Console.Error.WriteLine("    \"split\": false,");
+        Console.Error.WriteLine("    \"splitOutputDir\": null,");
+        Console.Error.WriteLine("    \"heat\": { \"T1\": 220, \"T2\": 220, \"T3\": 230, \"T4\": 220 }");
+        Console.Error.WriteLine("  }");
     }
 }
