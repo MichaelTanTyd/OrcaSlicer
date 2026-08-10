@@ -47,6 +47,7 @@ public static class Program
         bool splitMode = false;
         string? configPath = null;
         string? jobName = null;
+        string? mirrorDir = null;
         var cleanArgs = new List<string>();
 
         foreach (var arg in args)
@@ -57,6 +58,8 @@ public static class Program
                 configPath = arg["--start-config=".Length..];
             else if (arg.StartsWith("--name="))
                 jobName = arg["--name=".Length..];
+            else if (arg.StartsWith("--output-dir="))
+                mirrorDir = arg["--output-dir=".Length..];
             else
                 cleanArgs.Add(arg);
         }
@@ -119,7 +122,7 @@ public static class Program
         {
             if (splitMode)
             {
-                RunSplit(inputPath, outputPath, jobName, isOrcaSlicerMode);
+                RunSplit(inputPath, outputPath, jobName, isOrcaSlicerMode, mirrorDir);
             }
             else
             {
@@ -168,7 +171,7 @@ public static class Program
     /// When isOrcaSlicerMode is true (single-arg invocation), the main .SRC content
     /// is written back to the input file so OrcaSlicer can output the converted result.
     /// </summary>
-    private static void RunSplit(string inputPath, string outputDir, string jobName, bool isOrcaSlicerMode)
+    private static void RunSplit(string inputPath, string outputDir, string jobName, bool isOrcaSlicerMode, string? mirrorDir)
     {
         var inputBase = Path.GetFileName(inputPath);
         var targetMb = (int)Math.Round(18.0);
@@ -203,10 +206,9 @@ public static class Program
                 Console.Error.WriteLine($"  OrcaSlicer: wrote main .SRC back to {inputBase}");
                 CrashLogger.Log($"OrcaSlicer mode: wrote main .SRC to input file {inputPath}");
 
-                // Try to mirror split output to current working directory.
-                // If OrcaSlicer sets CWD to the user's export directory, files land there.
-                // Otherwise, they stay in the .pp's directory (Metadata temp folder).
-                MirrorSplitOutput(outputDir, jobName);
+                // Mirror split output to user-specified directory (if --output-dir was provided)
+                // or to CWD as a fallback. Always logs the path so the user knows where files are.
+                MirrorSplitOutput(outputDir, jobName, mirrorDir);
             }
         }
 
@@ -245,45 +247,39 @@ public static class Program
     }
 
     /// <summary>
-    /// Mirror all generated .SRC files from the temp output directory to the
-    /// current working directory (CWD). If OrcaSlicer sets CWD to the user's
-    /// export directory, the files land right where the user expects them.
-    /// Falls back gracefully — files always remain in the source directory.
+    /// Mirror all generated .SRC files to a user-specified directory.
+    /// When --output-dir is provided, files are copied there so the user
+    /// has a single, predictable place to find them (no temp-directory hunting).
+    /// Without --output-dir, files stay in the source directory only.
     /// </summary>
-    private static void MirrorSplitOutput(string sourceDir, string jobName)
+    private static void MirrorSplitOutput(string sourceDir, string jobName, string? mirrorDir)
     {
+        if (string.IsNullOrWhiteSpace(mirrorDir))
+        {
+            Console.Error.WriteLine($"  Split output is in: {sourceDir}\\");
+            Console.Error.WriteLine($"  Tip: add --output-dir=D:\\path to your OrcaSlicer post-processing args");
+            return;
+        }
+
         try
         {
-            var cwd = Environment.CurrentDirectory;
-            Console.Error.WriteLine($"  CWD: {cwd}");
-            CrashLogger.Log($"OrcaSlicer CWD: {cwd}");
+            Directory.CreateDirectory(mirrorDir);
 
-            // Only mirror if CWD is different from and not inside the source dir
-            var srcFull = Path.GetFullPath(sourceDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var cwdFull = Path.GetFullPath(cwd).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-            if (string.Equals(srcFull, cwdFull, StringComparison.OrdinalIgnoreCase))
-            {
-                // Same directory — files are already in the right place, nothing to mirror
-                Console.Error.WriteLine($"  Split output is in CWD — files are already where you need them.");
-                return;
-            }
-
-            // Mirror to CWD
             var srcFiles = Directory.GetFiles(sourceDir, jobName + "*.SRC");
             foreach (var src in srcFiles)
             {
-                var dest = Path.Combine(cwd, Path.GetFileName(src));
+                var dest = Path.Combine(mirrorDir, Path.GetFileName(src));
                 File.Copy(src, dest, overwrite: true);
             }
 
-            Console.Error.WriteLine($"  Split output mirrored to CWD: {cwd}\\");
-            CrashLogger.Log($"Split output mirrored: {srcFiles.Length} file(s) → {cwd}");
+            Console.Error.WriteLine($"  Split output mirrored → {mirrorDir}\\");
+            CrashLogger.Log($"Split output mirrored: {srcFiles.Length} file(s) → {mirrorDir}");
         }
         catch (Exception ex)
         {
-            // Best-effort: files are still intact in the source directory
-            CrashLogger.Log($"Info: could not mirror split output to CWD: {ex.Message}");
+            Console.Error.WriteLine($"  Warning: could not mirror to {mirrorDir}: {ex.Message}");
+            Console.Error.WriteLine($"  Files are still in: {sourceDir}\\");
+            CrashLogger.Log($"Mirror failed ({mirrorDir}): {ex.Message}");
         }
     }
 
@@ -298,6 +294,14 @@ public static class Program
         Console.Error.WriteLine("");
         Console.Error.WriteLine("Split mode generates a main .SRC + N sub-program .SRC files,");
         Console.Error.WriteLine("each ~18 MB, split at complete layer boundaries.");
+        Console.Error.WriteLine("");
+        Console.Error.WriteLine("Options:");
+        Console.Error.WriteLine("  --name=JOB             KRL program name (default: derived from filename)");
+        Console.Error.WriteLine("  --start-config=FILE    Load axis/cart/heat config from JSON");
+        Console.Error.WriteLine("  --output-dir=PATH      Mirror split .SRC files to this directory (split mode only)");
+        Console.Error.WriteLine("");
+        Console.Error.WriteLine("OrcaSlicer post-processing example:");
+        Console.Error.WriteLine("  gcode2krl.exe --split --output-dir=D:\\MyKRLPrints");
         Console.Error.WriteLine("");
         Console.Error.WriteLine("Config JSON fields:");
         Console.Error.WriteLine("  axis.{A1..A6,E1..E4}    Joint angles for PTP ready position");
